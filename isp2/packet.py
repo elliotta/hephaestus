@@ -20,12 +20,15 @@ class InnovatePacket(object):
     SENSOR_DATA_MASK        = 0b0001000000000000 # In header. 1 if data, 0 if reply to command.
     CAN_LOG_MASK            = 0b0000100000000000 # In header. 1 if originating device can do internal logging.
 
+    LM1_HIGH_MASK           = START_MARKER_MASK
+    LM1_LOW_MASK            = 0b0010001010000000 # First word of LM-1
     LC1_HIGH_MASK           = 0b0100001000000000 # First of two words from an LC-1, bits always high
     LC1_LOW_MASK            = 0b1010000010000000 # First of two words from an LC-1, bits always low
 
-    def __init__(self, header=None, data=None):
+    def __init__(self, header=None, data=None, devices=None):
         self.header = header
         self.data = data
+        self.devices = devices
 
     def _to_words(self, bytestring):
         """Convert a byte string to a list of words.
@@ -66,39 +69,37 @@ class InnovatePacket(object):
         Packet length is the number of data words after the header.
         Note that each word is 2 bytes long.
         """
-        if not self._header:
-            return None
-        # Packet length is encoded in bit 8 and bits 6-0
-        # First, get bits 6-0
-        packet_length = self._header & 0b0000000001111111
-        # Bit 8 is the 7th (zero-indexed) bit in the length
-        if self._header & 0b0000000100000000:
-            packet_length += 0b10000000 # 128
-        return packet_length
+        if self._header:
+            # Packet length is encoded in bit 8 and bits 6-0
+            # First, get bits 6-0
+            packet_length = self._header & 0b0000000001111111
+            # Bit 8 is the 7th (zero-indexed) bit in the length
+            if self._header & 0b0000000100000000:
+                packet_length += 0b10000000 # 128
+            return packet_length
 
     @property
     def is_recording_to_flash(self):
         """Return boolean indicating whether the data is being recorded to flash.
         """
-        if not self._header:
-            return None
-        return self.header & self.RECORDING_TO_FLASH_MASK == self.RECORDING_TO_FLASH_MASK
+        if self._header:
+            return self.header & self.RECORDING_TO_FLASH_MASK == self.RECORDING_TO_FLASH_MASK
 
     @property
     def is_sensor_data(self):
         """Return True if the packet contains sensor data, False if it is a reply to a command.
         """
-        if not self._header:
-            return None
-        return self.header & self.SENSOR_DATA_MASK == self.SENSOR_DATA_MASK
+        if self.header:
+            return self.header & self.SENSOR_DATA_MASK == self.SENSOR_DATA_MASK
 
     @property
     def can_log(self):
         """Return boolean indicating whether the originating device can do internal logging.
         """
-        if not self._header:
-            return None
-        return self.header & self.CAN_LOG_MASK == self.CAN_LOG_MASK
+        if self._header:
+            return self.header & self.CAN_LOG_MASK == self.CAN_LOG_MASK
+
+    ## The data ##
 
     @property
     def data(self):
