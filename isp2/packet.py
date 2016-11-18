@@ -49,11 +49,12 @@ class InnovatePacket(object):
         """Input header as a bytestring.
         """
         header = self._to_words(header)
-        if len(header) != 1:
-            raise Exception('Header must be exactly one word long.')
-        header = header[0]
-        if not header & self.HEADER_MASK == self.HEADER_MASK:
-            raise Exception('Invalid header')
+        if header:
+            if len(header) != 1:
+                raise Exception('Header must be exactly one word long.')
+            header = header[0]
+            if not header & self.HEADER_MASK == self.HEADER_MASK:
+                raise Exception('Invalid header')
         self._header = header
 
     ## Data stored in the header ##
@@ -69,9 +70,9 @@ class InnovatePacket(object):
             return None
         # Packet length is encoded in bit 8 and bits 6-0
         # First, get bits 6-0
-        packet_length = self._header[0] & 0b0000000001111111
+        packet_length = self._header & 0b0000000001111111
         # Bit 8 is the 7th (zero-indexed) bit in the length
-        if self._headeri[0] & 0b0000000100000000:
+        if self._header & 0b0000000100000000:
             packet_length += 0b10000000 # 128
         return packet_length
 
@@ -107,6 +108,9 @@ class InnovatePacket(object):
     def data(self, data):
         """Input data as a bytestring.
         """
-        self._data = self._to_words(data)
+        data = self._to_words(data)
+        if self._header and len(data) != self.packet_length:
+            raise Exception('Packet length does not match specification from header')
+        self._data = data
 
 
