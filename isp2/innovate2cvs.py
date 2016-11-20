@@ -60,7 +60,7 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
                     # Note the time - this is a new entry
                     now = datetime.datetime.now()
                     # Parse the packet into a dictionary. Assume only a TC-4
-                    data_dict = OrderedDict([('word %i' % i, word) for i, word in enumerate(p.data)])
+                    data_dict = OrderedDict([('word %i' % i, format(word, '016b')) for i, word in enumerate(p.data)])
                     # Write out the data
                     if not output_file or now.date() != current_date:
                         if output_file:
