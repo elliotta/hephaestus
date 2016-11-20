@@ -9,37 +9,8 @@ import os
 import sys
 import datetime
 from sys import stderr
-import struct
-
-import serial
-
-# Define some constants for the ISP2
-# Packets are organized by 16-bit words
-
-START_MARKER = 0b1000000000000000
-# If this is a header, bits 13, 9, and 7 will be 1. It will also be a (one word) section.
-HEADER_WORD        = START_MARKER | 0b0010001010000000
-RECORDING_TO_FLASH = 0b0100000000000000 # In header. 1 is is recording.
-SENSOR_DATA        = 0b0001000000000000 # In header. 1 if data, 0 if reply to command.
-DATA_HEADER_WORD   = HEADER_WORD | SENSOR_DATA # The stuff we want to log to a file.
-CAN_LOG            = 0b0000100000000000 # In header. 1 if originating device can do internal logging.
-
-LC1_HIGH           = 0b0100001000000000 # First of two words from an LC-1, bits always high
-LC1_LOW            = 0b1010000010000000 # First of two words from an LC-1, bits always low
-
-def get_packet_length(header_word):
-    """Get the packet length from an ISP2 header word.
-
-    Packet length is the number of data words after the header.
-    Note that each word is 2 bytes long.
-    """
-    # Packet length is encoded in bit 8 and bits 6-0
-    # First, get bits 6-0
-    packet_length = header_word & 0b0000000001111111
-    # Bit 8 is the 7th (zero-indexed) bit in the length
-    if header_word & 0b0000000100000000:
-        packet_length += 0b10000000 # 128
-    return packet_length
+from collections import OrderedDict
+import isp2_serial 
 
 
 def get_output_filename(current_date, output_directory):
@@ -71,18 +42,8 @@ def get_output_file(filename, data_dict, sep):
         return f
 
 
-def main(output_directory=None, output_file_name=None):
-    # Device Setup
-    device = '/dev/tty.UC-232AC'
-    baudrate = 19200
-    parity=serial.PARITY_NONE
-    stopbits=serial.STOPBITS_ONE
-
-    # Output setup
-    sep = '\t'
-
+def main(device, output_directory=None, output_file_name=None, output_separator='\t'):
     # Setup
-    data_dict = {} # This will get trashed; don't worry that it's not ordered
     output_file = None
     if output_file_name and output_directory:
         output_file_name = os.path.join(output_directory, output_file_name)
@@ -91,62 +52,37 @@ def main(output_directory=None, output_file_name=None):
     current_date = datetime.datetime.now().date()
 
     print('About to connect to serial device %s' % device)
-    with serial.Serial(device, baudrate=baudrate, parity=parity, stopbits=stopbits) as ser:
-        while True:
-            # First two Byes are the header word
-            header = struct.unpack(">H", ser.read(2))[0] # Example string is '\xb2\x82'
-
-            if not header & DATA_HEADER_WORD == DATA_HEADER_WORD:
-                print('Expected header, got other data.')
-                continue
-
-            packet_length = get_packet_length(header) * 2 # Words are 2 bytes long
-
-            data_packet = ser.read(packet_length) # Example is 'C\x13\x0b3', with 2 words
-
-        """
+    with isp2_serial.Isp2Socket(device) as ser:
         while True:
             try:
-                line = ser.readline().strip()
-                if line:
-                    if line.startswith('V'):
-                        # Note the time - this is a new entry
-                        now = datetime.datetime.now()
-                        # Write out the old data
-                        if 'date' in data_dict:
-                            if not output_file or now.date() != current_date:
-                                if output_file:
-                                    output_file.close()
-                                print 'Opening new output file'
-                                current_date = datetime.datetime.now().date()
-                                if not output_file_name:
-                                    output_file = get_output_file(get_output_filename(current_date, output_directory, sep), data_dict)
-                                else:
-                                    output_file = get_output_file(output_file_name, data_dict)
-                            output_file.write(sep.join([str(x) for x in data_dict.values()]) + '\n')
-                        # Start a new dict
-                        data_dict = OrderedDict((('date', now.date()), ('time', now.time())))
-                    try:
-                        key, value = line.split()
-                    except Exception:
-                        if line.startswith('Checksum'):
-                            # stderr.write('Error splitting checksum line\n')
-                            pass
+                p = ser.read_packet()
+                if p.is_sensor_data():
+                    # Note the time - this is a new entry
+                    now = datetime.datetime.now()
+                    # Parse the packet into a dictionary. Assume only a TC-4
+                    data_dict = OrderedDict([('word %i' % i, word) for i, word in enumerate(p.data)])
+                    # Write out the data
+                    if not output_file or now.date() != current_date:
+                        if output_file:
+                            output_file.close()
+                        print 'Opening new output file'
+                        current_date = datetime.datetime.now().date()
+                        if not output_file_name:
+                            output_file = get_output_file(get_output_filename(current_date, output_directory, output_separator), data_dict)
                         else:
-                            stderr.write("Cannot split line\n")
-                            stderr.write(line)
-                        continue
-                    data_dict[key] = value
+                            output_file = get_output_file(output_file_name, data_dict)
+                    output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
             except KeyboardInterrupt:
                 break
-        """
 
 
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Read an Innovate serial data sream')
+    parser.add_argument('device', help='The USB device')
     parser.add_argument('-o', '--output_file', help='File to write to')
     parser.add_argument('-u', '--output_directory', help='Directory to write output to. If no file is given, base on date')
+    parser.add_argument('-s', '--output_separator', default='\t', help='Separator for output file')
     parser.add_argument('-d', '--daemon', action='store_true', help='Run as a daemon')
     args = parser.parse_args()
 
@@ -166,4 +102,4 @@ if __name__ == '__main__':
         f.write('%i\n' % mypid)
         f.close()
 
-    main(output_file_name=args.output_file, output_directory=args.output_directory)
+    main(args.device, output_file_name=args.output_file, output_directory=args.output_directory, output_separator=args.output_separator)
