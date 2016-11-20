@@ -25,6 +25,6 @@ may need repeated after a system update. This also requires root access:
 
 ~~~~
 sudo easy_install pip
-sudo pip install pyseral
+sudo pip install pyserial
 ~~~~
 
