@@ -20,6 +20,7 @@ class InnovatePacket(object):
     SENSOR_DATA_MASK        = 0b0001000000000000 # In header. 1 if data, 0 if reply to command.
     CAN_LOG_MASK            = 0b0000100000000000 # In header. 1 if originating device can do internal logging.
 
+    AUX_CHANNEL_LOW_MASK    = 0b1100000010000000 # The other bits are data from the sensor
     LM1_HIGH_MASK           = START_MARKER_MASK
     LM1_LOW_MASK            = 0b0010001010000000 # First word of LM-1
     LC1_HIGH_MASK           = 0b0100001000000000 # First of two words from an LC-1, bits always high
@@ -113,5 +114,18 @@ class InnovatePacket(object):
         if self._header and len(data) != self.packet_length:
             raise Exception('Packet length does not match specification from header')
         self._data = data
+
+    def aux_word2aux_channel(self, word):
+        """Strip unused bits from an aux channel word.
+        """
+        # Confirm that this is an aux channel word
+        if not word & self.AUX_CHANNEL_LOW_MASK == 0:
+            raise Exception('Not an aux channel word')
+        # The MSB of each (8-bit) byte in Aux words is zero
+        # First, get bits 6-0
+        aux_channel = word & 0b0000000001111111
+        # Now get bits 13-8 and shift them by one
+        aux_channel += (word & 0b0011111100000000) >> 1
+        return aux_channel
 
 
