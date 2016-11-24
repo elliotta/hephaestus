@@ -67,12 +67,13 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
         while True:
             try:
                 p = ser.read_packet()
-                if p.is_sensor_data():
+                if p.is_sensor_data:
                     # Note the time - this is a new entry
                     now = datetime.datetime.now()
 
                     # Parse the packet into a dictionary. Assume only a TC-4
                     aux_data = [p.aux_word2aux_channel(word) for word in p.data]
+                    print('Aux data is %s' % ', '.join([str(x) for x in aux_data]))
 
                     if not file_start_time:
                         file_start_time = now
