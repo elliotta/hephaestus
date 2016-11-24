@@ -17,8 +17,14 @@ designed to run under python2.7.
 Installation
 ------------
 
+### pyserial
+
 Assuming you already have a python2.7 install, all you need to run this code is
-the pyserial module. To get this on OSX, either use your favorite package
+the pyserial module.
+
+Python2.7 and pyserial come installed on some versions of raspbian.
+
+To get this on OSX, either use your favorite package
 manager, or a virtual environment, or install it in the system area. This last
 is the simplest way to set it up, but is not the recommended method becasue this
 may need repeated after a system update. This also requires root access:
@@ -28,3 +34,9 @@ sudo easy_install pip
 sudo pip install pyserial
 ~~~~
 
+### Timezone
+
+Default file names are based on the date, and the logs have timestamps. To avoid
+confusion, be sure the operating system's timezone is set to the timezone you
+wish to see in the log files. Local time is probably better for a home stove
+than UTC would be.
