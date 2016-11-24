@@ -24,7 +24,7 @@ class Isp2Serial(serial.Serial):
         # Get the header first to determine the length of the packet
         p = packet.InnovatePacket(self.read(2))
         # Packet length is in words, and each word is 2 bytes
-        p.data = self.read(p.data_length() * 2)
+        p.data = self.read(p.packet_length * 2)
         return p
 
     def start_recording(self):
