@@ -27,8 +27,10 @@ class InnovatePacket(object):
     LC1_LOW_MASK            = 0b1010000010000000 # First of two words from an LC-1, bits always low
 
     def __init__(self, header=None, data=None, devices=None):
+        self._data = None # if data is set to None after a header, __init__ will fail
         self.header = header
-        self.data = data
+        if data:
+            self.data = data
         self.devices = devices
 
     def _to_words(self, bytestring):
@@ -58,7 +60,7 @@ class InnovatePacket(object):
                 raise Exception('Header must be exactly one word long.')
             header = header[0]
             if not header & self.HEADER_MASK == self.HEADER_MASK:
-                raise Exception('Invalid header')
+                raise Exception('Invalid header %s' % header)
         self._header = header
 
     ## Data stored in the header ##
