@@ -63,7 +63,7 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
     averaged_data = None
 
     print('About to connect to serial device %s' % device)
-    with isp2_serial.Isp2Socket(device) as ser:
+    with isp2_serial.Isp2Serial(device) as ser:
         while True:
             try:
                 p = ser.read_packet()

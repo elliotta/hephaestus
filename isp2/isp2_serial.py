@@ -12,9 +12,9 @@ import serial
 import packet
 
 
-class Isp2Socket(serial.Serial):
+class Isp2Serial(serial.Serial):
     def __init__(self, device):
-        serial.Serial.__init__(self, device, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE)
+        serial.Serial.__init__(self, device, baudrate=19200, parity=serial.PARITY_NONE, stopbits=serial.STOPBITS_ONE, timeout=5)
         self.reply_lock = threading.Lock()
         self.reply = None
 
