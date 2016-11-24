@@ -111,6 +111,8 @@ class InnovatePacket(object):
         """Input data as a bytestring.
         """
         data = self._to_words(data)
+        if not data and self.packet_length:
+            raise Exception('No data in packet, expected %i' % self.packet_length)
         if self._header and len(data) != self.packet_length:
             raise Exception('Packet length does not match specification from header')
         self._data = data
