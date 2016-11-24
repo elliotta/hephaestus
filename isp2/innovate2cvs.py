@@ -48,7 +48,7 @@ def get_output_file(filename, data_dict, sep):
 
 
 def main(device, output_directory=None, output_file_name=None, output_separator='\t', interval=1,
-         log_short_interval=False, short_output_file=None, short_output_directory='/dev/shm', short_interval=60, verbose=False):
+         log_short_interval=False, short_output_file_name=None, short_output_directory='/dev/shm', short_interval=60, verbose=False):
     '''Interval is in minutes. Short_interval is seconds.
     '''
 
@@ -57,13 +57,17 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
     if output_file_name and output_directory:
         output_file_name = os.path.join(output_directory, output_file_name)
 
+    short_output_file = None
+    if short_output_file_name and short_output_directory:
+        short_output_file_name = os.path.join(short_output_directory, short_output_file_name)
+
     interval = datetime.timedelta(minutes=interval)
     short_interval = datetime.timedelta(seconds=short_interval)
 
     # Main function
     current_date = datetime.datetime.now().date()
     file_start_time = None # For logging hours since start of file
-    short_interval_file_start_time = None # For logging hours since start of file
+    short_file_start_time = None # For logging hours since start of file
     interval_start_time = None
     short_interval_start_time = None
     averaged_data = None
@@ -85,8 +89,8 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
 
                     if not file_start_time:
                         file_start_time = now
-                    if not short_interval_file_start_time:
-                        short_interval_file_start_time = now
+                    if not short_file_start_time:
+                        short_file_start_time = now
                     if not interval_start_time:
                         interval_start_time = now
                     if not short_interval_start_time:
@@ -119,34 +123,35 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
                             n_in_average = 1
                         else:
                             averaged_data = [avg + (new - avg)/n_in_average  for avg, new in zip(averaged_data, aux_data)]
+
                     if log_short_interval:
                         if now - short_interval_start_time > short_interval:
                             # Write out old data
-                            data_dict = OrderedDict([('timestamp', short_interval_start_time.strftime('%H:%M:%S')), ('hours', (short_interval_start_time-short_interval_file_start_time).total_seconds()/3600.0)])
-                            data_dict.update([('avg %i' % i, str(avg)) for i, avg in enumerate(short_interval_averaged_data)])
+                            data_dict = OrderedDict([('timestamp', short_interval_start_time.strftime('%H:%M:%S')), ('hours', format((short_interval_start_time-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
+                            data_dict.update([('chan %i' % (i+1), str(avg)) for i, avg in enumerate(short_interval_averaged_data)])
                             # Write out the data
-                            if not short_interval_output_file or now.date() != current_date:
-                                if short_interval_output_file:
-                                    short_interval_output_file.close()
-                                print('Opening new short_interval_output file')
+                            if not short_output_file or now.date() != current_date:
+                                if short_output_file:
+                                    short_output_file.close()
+                                print('Opening new short output file')
                                 current_date = datetime.datetime.now().date()
-                                if not short_interval_output_file_name:
-                                    short_interval_output_file = get_output_file(get_output_filename(current_date, output_directory, short_interval=True), data_dict, output_separator)
+                                if not short_output_file_name:
+                                    short_output_file = get_output_file(get_output_filename(current_date, output_directory, short_interval=True), data_dict, output_separator)
                                 else:
-                                    output_file = get_output_file(output_file_name, data_dict, output_separator)
-                            output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
+                                    short_output_file = get_output_file(short_output_file_name, data_dict)
+                            short_output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
                             # Set up for next loop
-                            interval_start_time = now
-                            averaged_data = aux_data
-                            n_in_average = 1
+                            short_interval_start_time = now
+                            short_interval_averaged_data = aux_data
+                            n_in_short_interval_average = 1
                         else:
                             # Update the running average
-                            if not averaged_data:
+                            if not short_interval_averaged_data:
                                 # This should only happen the first time through the loop
-                                averaged_data = aux_data
-                                n_in_average = 1
+                                short_interval_averaged_data = aux_data
+                                short_interval_n_in_average = 1
                             else:
-                                averaged_data = [avg + (new - avg)/n_in_average  for avg, new in zip(averaged_data, aux_data)]
+                                short_interval_averaged_data = [avg + (new - avg)/short_interval_n_in_average  for avg, new in zip(short_interval_averaged_data, aux_data)]
 
             except KeyboardInterrupt:
                 break
@@ -162,9 +167,9 @@ if __name__ == '__main__':
     parser.add_argument('-s', '--output_separator', default='\t', help='Separator for output file')
     group = parser.add_argument_group('short interval logging')
     group.add_argument('--log_short_interval', action='store_true', help='Additional log at shorter interval')
-    group.add_argument('--short_output_file', help='File to write shorter intervales to')
+    group.add_argument('--short_output_file', dest='short_output_file_name', help='File to write shorter intervales to')
     group.add_argument('--short_output_directory', default='/dev/shm', help='Directory to write short interval output to.')
-    group.add_argument('--short_interval', type=int, default=60, help='Interval to log, in integer seconds')
+    group.add_argument('--short_interval', type=int, default=15, help='Interval to log, in integer seconds')
     parser.add_argument('-d', '--daemon', action='store_true', help='Run as a daemon')
     parser.add_argument('-v', '--verbose', action='store_true', help='Print each data point to stdout')
     args = parser.parse_args()
