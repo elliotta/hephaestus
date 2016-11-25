@@ -7,61 +7,108 @@ from collections import OrderedDict
 import isp2_serial 
 
 
-def get_output_filename(current_date, output_directory, short_interval=False):
-    """Return the current file name based on the current_date.
+class Tc4DataWriter(object):
+    """Write data to disk, and manage file rollover and cleanup.
     """
-    if not output_directory:
-        output_directory = ''
-    if short_interval:
-        return os.path.join(output_directory, current_date.strftime('%Y%m%d-short_interval.tsv'))
-    else:
-        return os.path.join(output_directory, current_date.strftime('%Y%m%d-tc4.tsv'))
 
+    def __init__(self, filename_format='%Y%m%d-tc4.tsv', output_directory='', separator='/t'):
+        self.filename_format = filename_format
+        self.output_directory = output_directory
+        self.separator = separator
+        self.current_file = None
+        self.current_file_time = None
 
-def get_output_file(filename, data_dict, sep):
-    """Create or open the output file.
+    def get_output_file(self, timestamp, header):
+        """Create or open the output file.
 
-    If a new file is being created, add a header line.
-    """
-    header_line = sep.join(data_dict.keys())
-    if os.path.exists(filename) and not os.stat(filename).st_size == 0:
-        # Check for a header line
-        f_check = open(filename)
-        if f_check.readline().strip() == header_line:
-            # Headers match, we're good to go
-            f_check.close()
-            return open(filename, 'a', 1) # line buffered
+        If a new file is being created, add a header line.
+        """
+        filename = os.path.join(self.output_directory, data_dict['timestamp'].strftime(self.filename_format))
+        header_line = self.separator.join(data_dict.keys())
+        if os.path.exists(filename) and not os.stat(filename).st_size == 0:
+            # Check for a header line
+            f_check = open(filename) # read only
+            if f_check.readline().strip() == header_line:
+                # Headers match, we're good to go
+                f_check.close()
+                self.current_file = open(filename, 'a', 1) # line buffered
+            else:
+                stderr.write('File %s has unexpected header line' % filename)
+                sys.exit(1)
         else:
-            stderr.write('File %s has unexpected header line' % filename)
-            sys.exit(1)
-    else:
-        # Is safe to overwrite an empty file
-        f = open(filename, 'w', 1)  # line buffered
-        f.write(header_line + '\n')
-        return f
+            # Is safe to overwrite an empty file
+            self.current_file = open(filename, 'w', 1)  # line buffered
+            self.current_file.write(header_line + '\n')
+        self.output_file_time = timestamp
+
+    def rollover(self, timestamp):
+        """Check if this data needs to go into a new file.
+        """
+        return self.output_file_time.date() != timestamp.date()
+
+    def write(self, timestamp, data_dict):
+        if not self.output_file or self.rollover(timestamp):
+            self.get_output_file(timestamp, self.assemble_line(timestamp, data_dict, header=True))
+        self.output_file.write(self.assemble_line(timestamp, data_dict))
+
+    def assemble_line(self, timestamp, data_dict, header=False):
+        '''Do the data cruching here.
+        '''
+        line_elements = []
+        if header:
+            line_elements.append('timestamp')
+            line_elements.append('hours')
+        else:
+            line_elements.append(timestamp.strftime('%H:%M:%S'))
+            line_elements.append(format((timestamp-self.output_file_time).total_seconds()/3600.0, '06.3f'))
+        if header:
+            line_elements += [str(x) for x in data_dict.keys()]
+        else:
+            line_elements += [str(x) for x in data_dict.values()]
+        return self.separator.join(line_elements) + '\n'
 
 
-def main(device, output_directory=None, output_file_name=None, output_separator='\t', interval=1,
-         log_short_interval=False, short_output_file_name=None, short_output_directory='/dev/shm', short_interval=60, verbose=False):
+class ShortIntervalDataWriter(Tc4DataWriter):
+    '''Short interval files have a slightly different data format.
+    '''
+
+    def __init__(self, filename_format='%Y%m%d-short_interval_tc4.tsv', *args, **kwargs):
+        Tc4DataWriter.__init__(self, filename_format=filename_format, *args, **kwargs)
+
+    def rollover(self, timestamp):
+        """Check if this data needs to go into a new file.
+        """
+        return self.output_file_time.date() != timestamp.date()
+
+    def assemble_line(self, timestamp, data_dict, header=False):
+        '''Do the data cruching here.
+        '''
+        line_elements = []
+        if header:
+            line_elements.append('timestamp')
+            line_elements.append('hours')
+        else:
+            line_elements.append(timestamp.strftime('%H:%M:%S'))
+            line_elements.append(format((timestamp-self.output_file_time).total_seconds()/3600.0, '07.4f'))
+        if header:
+            line_elements += [str(x) for x in data_dict.keys()]
+        else:
+            line_elements += [str(x) for x in data_dict.values()]
+        return self.separator.join(line_elements) + '\n'
+
+def main(device, output_directory=None, output_separator='\t', interval=1,
+         log_short_interval=False, short_output_directory='/dev/shm', short_interval=60, verbose=False):
     '''Interval is in minutes. Short_interval is seconds.
     '''
 
     # Setup
-    output_file = None
-    if output_file_name and output_directory:
-        output_file_name = os.path.join(output_directory, output_file_name)
-
-    short_output_file = None
-    if short_output_file_name and short_output_directory:
-        short_output_file_name = os.path.join(short_output_directory, short_output_file_name)
+    output_file =  Tc4DataWriter(output_directory=output_directory, separator=output_separator)
+    short_output_file = ShortIntervalDataWriter(output_directory=short_output_directory, separator=output_separator)
 
     interval = datetime.timedelta(minutes=interval)
     short_interval = datetime.timedelta(seconds=short_interval)
 
     # Main function
-    current_date = datetime.datetime.now().date()
-    file_start_time = None # For logging hours since start of file
-    short_file_start_time = None # For logging hours since start of file
     interval_start_time = None
     short_interval_start_time = None
     averaged_data = None
@@ -81,10 +128,6 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
                     if verbose:
                         print(now.isoformat() + ' ' + ', '.join([str(x) for x in aux_data]))
 
-                    if not file_start_time:
-                        file_start_time = now
-                    if not short_file_start_time:
-                        short_file_start_time = now
                     if not interval_start_time:
                         interval_start_time = now
                     if not short_interval_start_time:
@@ -92,19 +135,8 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
 
                     if now - interval_start_time > interval:
                         # Write out old data
-                        data_dict = OrderedDict([('timestamp', interval_start_time.strftime('%H:%M:%S')), ('hours', format((interval_start_time-file_start_time).total_seconds()/3600.0, '06.3f'))])
-                        data_dict.update([('chan %i' % (i+1), str(avg)) for i, avg in enumerate(averaged_data)])
-                        # Write out the data
-                        if not output_file or now.date() != current_date:
-                            if output_file:
-                                output_file.close()
-                            print('Opening new output file')
-                            current_date = datetime.datetime.now().date()
-                            if not output_file_name:
-                                output_file = get_output_file(get_output_filename(current_date, output_directory), data_dict, output_separator)
-                            else:
-                                output_file = get_output_file(output_file_name, data_dict)
-                        output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
+                        data_dict = OrderedDict([('chan %i' % (i+1), str(avg)) for i, avg in enumerate(averaged_data)])
+                        output_file.write(interval_start_time, data_dict)
                         # Set up for next loop
                         interval_start_time = now
                         averaged_data = aux_data
@@ -121,19 +153,8 @@ def main(device, output_directory=None, output_file_name=None, output_separator=
                     if log_short_interval:
                         if now - short_interval_start_time > short_interval:
                             # Write out old data
-                            data_dict = OrderedDict([('timestamp', short_interval_start_time.strftime('%H:%M:%S')), ('hours', format((short_interval_start_time-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
-                            data_dict.update([('chan %i' % (i+1), str(avg)) for i, avg in enumerate(short_interval_averaged_data)])
-                            # Write out the data
-                            if not short_output_file or now.date() != current_date:
-                                if short_output_file:
-                                    short_output_file.close()
-                                print('Opening new short output file')
-                                current_date = datetime.datetime.now().date()
-                                if not short_output_file_name:
-                                    short_output_file = get_output_file(get_output_filename(current_date, output_directory, short_interval=True), data_dict, output_separator)
-                                else:
-                                    short_output_file = get_output_file(short_output_file_name, data_dict)
-                            short_output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
+                            data_dict = OrderedDict([('chan %i' % (i+1), str(avg)) for i, avg in enumerate(short_interval_averaged_data)])
+                            short_output_file.write(short_interval_start_time, data_dict)
                             # Set up for next loop
                             short_interval_start_time = now
                             short_interval_averaged_data = aux_data
@@ -155,13 +176,11 @@ if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(description='Read an Innovate serial data sream')
     parser.add_argument('device', help='The USB device')
-    parser.add_argument('-o', '--output_file', dest='output_file_name', help='File to write to. If no file is given, base on date.')
     parser.add_argument('-u', '--output_directory', help='Directory to write output to.')
     parser.add_argument('-n', '--interval', type=int, default=1, help='Interval to log, in integer minutes')
     parser.add_argument('-s', '--output_separator', default='\t', help='Separator for output file')
     group = parser.add_argument_group('short interval logging')
     group.add_argument('--log_short_interval', action='store_true', help='Additional log at shorter interval')
-    group.add_argument('--short_output_file', dest='short_output_file_name', help='File to write shorter intervales to')
     group.add_argument('--short_output_directory', default='/dev/shm', help='Directory to write short interval output to.')
     group.add_argument('--short_interval', type=int, default=15, help='Interval to log, in integer seconds')
     parser.add_argument('-d', '--daemon', action='store_true', help='Run as a daemon')
