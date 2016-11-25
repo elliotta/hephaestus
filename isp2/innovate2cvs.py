@@ -1,10 +1,4 @@
 #!/usr/bin/env python
-"""Read data in Innovate Serial Protocol version 2 (ISP2).
-
-For data format specifications, see
-http://www.innovatemotorsports.com/support/downloads/Seriallog-2.pdf
-"""
-
 import os
 import sys
 import datetime
