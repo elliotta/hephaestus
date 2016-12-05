@@ -1,6 +1,7 @@
 """One data packet in Innovate Serial Protocol version 2 (ISP2).
 
 For data format specifications, see
+http://www.innovatemotorsports.com/support/manual/OT-2%20SDK.pdf
 http://www.innovatemotorsports.com/support/downloads/Seriallog-2.pdf
 """
 
