@@ -19,6 +19,7 @@ from sys import stderr
 from collections import OrderedDict
 from math import exp
 import time
+import subprocess
 
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_MAX31855.MAX31855 as MAX31855
@@ -145,7 +146,7 @@ def get_output_file(filename, data_dict, sep):
         return f
 
 
-def main(web_output_file, interval, verbose,
+def main(web_output_file, interval, web_server_port, verbose,
          log_interval, output_file_pattern, output_separator,
          log_short_interval, short_interval, short_output_file_pattern):
     '''Interval is in minutes. Short_interval is seconds.
@@ -159,6 +160,7 @@ def main(web_output_file, interval, verbose,
     log_interval = datetime.timedelta(minutes=log_interval)
     file_start_time = None # For logging hours since start of file
     interval_start_time = None
+    web_server = subprocess.Popen(['python', '-m', 'SimpleHTTPServer', str(web_server_port)], cwd=os.path.dirname(web_output_file))
 
     if log_short_interval:
 	    short_output_file = None
@@ -184,7 +186,7 @@ def main(web_output_file, interval, verbose,
             # Html output
             # Always overwrite current file
             with open(web_output_file, 'w') as web_file:
-                web_file.write('<html><head><title>Current Temps</title></head><body>%s<br><%s></body></html>' % ('<br>'.join(['temp %i: %f' % (i, f) for i, f in enumerate(corrected_temps)]), now.isoformat()))
+                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body>%s<br><%s></body></html>' % ('<br>'.join(['temp %i: %f' % (i, f) for i, f in enumerate(corrected_temps)]), now.isoformat()))
 
             # Log file output
             if not file_start_time:
@@ -235,6 +237,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Read data from MAX31855 sensors', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument('-w', '--web_output_file', default='/dev/shm/current_temp.html', help='Html output file')
     parser.add_argument('-i', '--interval', default=1, help='Seconds at which to update the web_output_file')
+    parser.add_argument('-p', '--web_server_port', default=8080, type=int, help='Web server port for displaying web_output_file')
     parser.add_argument('-v', '--verbose', action='store_true', help='Print each data point to stdout')
     parser.add_argument('-o', '--output_file_pattern', default='%Y%m%d-temps.tsv', help='Output file name based on date')
     parser.add_argument('-l', '--log_interval', type=int, default=1, help='Interval to log, in integer minutes')
