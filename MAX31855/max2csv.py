@@ -29,7 +29,7 @@ import Adafruit_MAX31855.MAX31855 as MAX31855
 # All sensors will share CLK and DO, with separate CS for each sensor
 CLK = 24
 DO  = 25
-CS  = [23, 18]
+CS  = [23, 18, 22, 17]
 
 
 def c_to_f(c):
@@ -129,21 +129,29 @@ def get_output_file(filename, data_dict, sep):
     If a new file is being created, add a header line.
     """
     header_line = sep.join(data_dict.keys())
-    if os.path.exists(filename) and not os.stat(filename).st_size == 0:
-        # Check for a header line
-        f_check = open(filename)
-        if f_check.readline().strip() == header_line:
-            # Headers match, we're good to go
-            f_check.close()
-            return open(filename, 'a', 1) # line buffered
+    x = 1
+    while True:
+        # Loop will break at a return statement
+        if os.path.exists(filename) and not os.stat(filename).st_size == 0:
+            # Check for a header line
+            f_check = open(filename)
+            if f_check.readline().strip() == header_line:
+                # Headers match, we're good to go
+                f_check.close()
+                return open(filename, 'a', 1) # line buffered
+            else:
+                x += 1
+                if x == 2:
+                    # only do this the first time, otherwise file will be foo-2-3-4.log!
+                    base, extension = os.path.splitext(filename) 
+                filename = base + '-' + str(x) + extension
+                stderr.write('File %s has unexpected header line' % filename)
+                # The next loop will try with this new filename
         else:
-            stderr.write('File %s has unexpected header line' % filename)
-            sys.exit(1)
-    else:
-        # Is safe to overwrite an empty file
-        f = open(filename, 'w', 1)  # line buffered
-        f.write(header_line + '\n')
-        return f
+            # Is safe to overwrite an empty file
+            f = open(filename, 'w', 1)  # line buffered
+            f.write(header_line + '\n')
+            return f
 
 
 def main(web_output_file, interval, web_server_port, verbose,
@@ -176,47 +184,47 @@ def main(web_output_file, interval, web_server_port, verbose,
             # Collect the data
             temps = [sensor.readTempC() for sensor in sensors]
             internals = [sensor.readInternalC() for sensor in sensors]
-            corrected_temps = [corrected_celsius(temp, internal) for temp, internal in zip(temps, internals)]
+            corrected_temps_f = [c_to_f(corrected_celsius(temp, internal)) for temp, internal in zip(temps, internals)]
             now = datetime.datetime.now()
 
             # Stdout output
             if verbose:
-                print(now.isoformat() + ' ' + '; '.join(['%f,%f,%f' % (c_to_f(t), c_to_f(i), c_to_f(c)) for t, i, c in zip(temps, internals, corrected_temps) ]))
+                print(now.isoformat() + ' ' + '; '.join(['%f,%f,%f' % (t, i, c) for t, i, c in zip(temps, internals, corrected_temps_f) ]))
 
             # Html output
             # Always overwrite current file
             with open(web_output_file, 'w') as web_file:
-                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body>%s<br><%s></body></html>' % ('<br>'.join(['temp %i: %f' % (i, f) for i, f in enumerate(corrected_temps)]), now.isoformat()))
+                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['temp %i: %.1f F' % (i, f) for i, f in enumerate(corrected_temps_f)]), now.isoformat()))
 
             # Log file output
-            if not file_start_time:
-                file_start_time = now
             if not interval_start_time:
                 interval_start_time = now
             if log_short_interval:
-                if not short_file_start_time:
-                    short_file_start_time = now
                 if not short_interval_start_time:
                     short_interval_start_time = now
 
-            if now - interval_start_time > log_interval:
+            if (not file_start_time) or (now - interval_start_time > log_interval):
+                if not file_start_time:
+                    file_start_time = now
                 # Assemble data dictionary
                 data_dict = OrderedDict([('timestamp', interval_start_time.strftime('%H:%M:%S')), ('hours', format((interval_start_time-file_start_time).total_seconds()/3600.0, '06.3f'))])
-                data_dict.update([('sensor %i' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps)])
+                data_dict.update([('sensor %i F' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps_f)])
                 # Write out the data
                 if not output_file or now.date() != current_date:
                     if output_file:
                         output_file.close()
                     print('Opening new output file')
                     current_date = datetime.datetime.now().date()
-                    output_file = get_output_file(current_date.strftime(log_file_pattern), data_dict, output_separator)
+                    output_file = get_output_file(current_date.strftime(output_file_pattern), data_dict, output_separator)
                 output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
 
             if log_short_interval:
-                if now - short_interval_start_time > short_interval:
+                if (not short_file_start_time) or (now - short_interval_start_time > short_interval):
+                    if not short_file_start_time:
+                        short_file_start_time = now
                     # Assemble data dictionary
                     data_dict = OrderedDict([('timestamp', short_interval_start_time.strftime('%H:%M:%S')), ('hours', format((short_interval_start_time-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
-                    data_dict.update([('sensor %i' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps)])
+                    data_dict.update([('sensor %i F' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps_f)])
                     # Write out the data
                     if not short_output_file or now.date() != current_date:
                         if short_output_file:
@@ -226,10 +234,12 @@ def main(web_output_file, interval, web_server_port, verbose,
                         short_output_file = get_output_file(current_date.strftime(short_log_file_pattern), data_dict, output_separator)
                     short_output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
 
+            time.sleep(interval - time.time() % interval) # corrects for drift
+
         except KeyboardInterrupt:
             break
 
-        time.sleep(interval - time.time() % interval) # corrects for drift
+    web_server.terminate() # Cleanup
 
 
 if __name__ == '__main__':
@@ -251,7 +261,8 @@ if __name__ == '__main__':
 
     if args.daemon:
         # Pid file check
-        pidfile = '/var/run/innovate.pid'
+        #pidfile = '/var/run/max2csv.pid'
+        pidfile = '/dev/shm/max2csv.pid'
         mypid = os.getpid()
         if os.path.exists(pidfile):
             f = open(pidfile)
