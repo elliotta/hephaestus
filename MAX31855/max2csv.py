@@ -182,6 +182,9 @@ def main(web_output_file, interval, verbose,
                 print(now.isoformat() + ' ' + '; '.join(['%f,%f,%f' % (c_to_f(t), c_to_f(i), c_to_f(c)) for t, i, c in zip(temps, internals, corrected_temps) ]))
 
             # Html output
+            # Always overwrite current file
+            with open(web_output_file, 'w') as web_file:
+                web_file.write('<html><head><title>Current Temps</title></head><body>%s<br><%s></body></html>' % ('<br>'.join(['temp %i: %f' % (i, f) for i, f in enumerate(corrected_temps)]), now.isoformat()))
 
             # Log file output
             if not file_start_time:
