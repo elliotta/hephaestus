@@ -1,5 +1,8 @@
 #!/usr/bin/env python
 """Read data from an Adafruit MAX31855.
+After a testing reading out at 10Hz, it was determined that the temperatures
+  returned by this board are stable enough that the current data point is
+  sufficient, and averaging multiple data points is unnecessary.
 
 This code requires https://github.com/adafruit/Adafruit_Python_MAX31855
 
@@ -15,6 +18,7 @@ import datetime
 from sys import stderr
 from collections import OrderedDict
 from math import exp
+import time
 
 import Adafruit_GPIO.SPI as SPI
 import Adafruit_MAX31855.MAX31855 as MAX31855
@@ -22,9 +26,9 @@ import Adafruit_MAX31855.MAX31855 as MAX31855
 
 # Raspberry Pi software SPI configuration.
 # All sensors will share CLK and DO, with separate CS for each sensor
-CLK = 25
-DO  = 18
-CS  = [24, 27]
+CLK = 24
+DO  = 25
+CS  = [23, 18]
 
 
 def c_to_f(c):
@@ -118,17 +122,6 @@ def corrected_celsius(thermocouple_temp, internal_temp):
         )
 
 
-def get_output_filename(current_date, output_directory, short_interval=False):
-    """Return the current file name based on the current_date.
-    """
-    if not output_directory:
-        output_directory = ''
-    if short_interval:
-        return os.path.join(output_directory, current_date.strftime('%Y%m%d-short_interval.tsv'))
-    else:
-        return os.path.join(output_directory, current_date.strftime('%Y%m%d-tc4.tsv'))
-
-
 def get_output_file(filename, data_dict, sep):
     """Create or open the output file.
 
@@ -152,8 +145,9 @@ def get_output_file(filename, data_dict, sep):
         return f
 
 
-def main(output_directory=None, output_file_name=None, output_separator='\t', interval=1,
-         log_short_interval=False, short_output_file_name=None, short_output_directory='/dev/shm', short_interval=60, verbose=False):
+def main(web_output_file, interval, verbose,
+         log_interval, output_file_pattern, output_separator,
+         log_short_interval, short_interval, short_output_file_pattern):
     '''Interval is in minutes. Short_interval is seconds.
     '''
 
@@ -162,123 +156,91 @@ def main(output_directory=None, output_file_name=None, output_separator='\t', in
 
     # Setup
     output_file = None
-    if output_file_name and output_directory:
-        output_file_name = os.path.join(output_directory, output_file_name)
-
-    short_output_file = None
-    if short_output_file_name and short_output_directory:
-        short_output_file_name = os.path.join(short_output_directory, short_output_file_name)
-
-    interval = datetime.timedelta(minutes=interval)
-    short_interval = datetime.timedelta(seconds=short_interval)
-
-    # Main function
-    current_date = datetime.datetime.now().date()
+    log_interval = datetime.timedelta(minutes=log_interval)
     file_start_time = None # For logging hours since start of file
-    short_file_start_time = None # For logging hours since start of file
     interval_start_time = None
-    short_interval_start_time = None
-    averaged_data = None
-    short_interval_averaged_data = None
+
+    if log_short_interval:
+	    short_output_file = None
+	    short_interval = datetime.timedelta(seconds=short_interval)
+	    short_file_start_time = None # For logging hours since start of file
+	    short_interval_start_time = None
 
     print('About to connect to %i sensors' % len(CS))
     sensors = [MAX31855.MAX31855(CLK, this_CS, DO) for this_CS in CS]
+    print('Sensors connected')
     while True:
         try:
+            # Collect the data
             temps = [sensor.readTempC() for sensor in sensors]
             internals = [sensor.readInternalC() for sensor in sensors]
             corrected_temps = [corrected_celsius(temp, internal) for temp, internal in zip(temps, internals)]
             now = datetime.datetime.now()
 
+            # Stdout output
             if verbose:
                 print(now.isoformat() + ' ' + '; '.join(['%f,%f,%f' % (c_to_f(t), c_to_f(i), c_to_f(c)) for t, i, c in zip(temps, internals, corrected_temps) ]))
 
+            # Html output
+
+            # Log file output
             if not file_start_time:
                 file_start_time = now
-            if not short_file_start_time:
-                short_file_start_time = now
             if not interval_start_time:
                 interval_start_time = now
-            if not short_interval_start_time:
-                short_interval_start_time = now
+            if log_short_interval:
+                if not short_file_start_time:
+                    short_file_start_time = now
+                if not short_interval_start_time:
+                    short_interval_start_time = now
 
-            if now - interval_start_time > interval:
-                # Write out old data
+            if now - interval_start_time > log_interval:
+                # Assemble data dictionary
                 data_dict = OrderedDict([('timestamp', interval_start_time.strftime('%H:%M:%S')), ('hours', format((interval_start_time-file_start_time).total_seconds()/3600.0, '06.3f'))])
-                data_dict.update([('sensor %i' % (i+1), str(avg)) for i, avg in enumerate(averaged_data)])
+                data_dict.update([('sensor %i' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps)])
                 # Write out the data
                 if not output_file or now.date() != current_date:
                     if output_file:
                         output_file.close()
                     print('Opening new output file')
                     current_date = datetime.datetime.now().date()
-                    if not output_file_name:
-                        output_file = get_output_file(get_output_filename(current_date, output_directory), data_dict, output_separator)
-                    else:
-                        output_file = get_output_file(output_file_name, data_dict)
+                    output_file = get_output_file(current_date.strftime(log_file_pattern), data_dict, output_separator)
                 output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
-                # Set up for next loop
-                interval_start_time = now
-                averaged_data = corrected_temps
-                n_in_average = 1
-            else:
-                # Update the running average
-                if not averaged_data:
-                    # This should only happen the first time through the loop
-                    averaged_data = corrected_temps
-                    n_in_average = 1
-                else:
-                    averaged_data = [avg + (new - avg)/n_in_average  for avg, new in zip(averaged_data, corrected_temps)]
 
             if log_short_interval:
                 if now - short_interval_start_time > short_interval:
-                    # Write out old data
+                    # Assemble data dictionary
                     data_dict = OrderedDict([('timestamp', short_interval_start_time.strftime('%H:%M:%S')), ('hours', format((short_interval_start_time-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
-                    data_dict.update([('sensor %i' % (i+1), str(avg)) for i, avg in enumerate(short_interval_averaged_data)])
+                    data_dict.update([('sensor %i' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps)])
                     # Write out the data
                     if not short_output_file or now.date() != current_date:
                         if short_output_file:
                             short_output_file.close()
                         print('Opening new short output file')
                         current_date = datetime.datetime.now().date()
-                        if not short_output_file_name:
-                            short_output_file = get_output_file(get_output_filename(current_date, output_directory, short_interval=True), data_dict, output_separator)
-                        else:
-                            short_output_file = get_output_file(short_output_file_name, data_dict)
+                        short_output_file = get_output_file(current_date.strftime(short_log_file_pattern), data_dict, output_separator)
                     short_output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
-                    # Set up for next loop
-                    short_interval_start_time = now
-                    short_interval_averaged_data = corrected_temps
-                    n_in_short_interval_average = 1
-                else:
-                    # Update the running average
-                    if not short_interval_averaged_data:
-                        # This should only happen the first time through the loop
-                        short_interval_averaged_data = corrected_temps
-                        short_interval_n_in_average = 1
-                    else:
-                        short_interval_averaged_data = [avg + (new - avg)/short_interval_n_in_average  for avg, new in zip(short_interval_averaged_data, corrected_temps)]
 
         except KeyboardInterrupt:
             break
 
-            time.sleep(.1)
+        time.sleep(interval - time.time() % interval) # corrects for drift
 
 
 if __name__ == '__main__':
     import argparse
-    parser = argparse.ArgumentParser(description='Read data from MAX31855 sensors')
-    parser.add_argument('-o', '--output_file_pattern', dest='output_file_name', help='File to write to. If no file is given, base on date.')
-    parser.add_argument('-u', '--output_directory', help='Directory to write output to.')
-    parser.add_argument('-n', '--interval', type=int, default=1, help='Interval to log, in integer minutes')
-    parser.add_argument('-s', '--output_separator', default='\t', help='Separator for output file')
+    parser = argparse.ArgumentParser(description='Read data from MAX31855 sensors', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+    parser.add_argument('-w', '--web_output_file', default='/dev/shm/current_temp.html', help='Html output file')
+    parser.add_argument('-i', '--interval', default=1, help='Seconds at which to update the web_output_file')
+    parser.add_argument('-v', '--verbose', action='store_true', help='Print each data point to stdout')
+    parser.add_argument('-o', '--output_file_pattern', default='%Y%m%d-temps.tsv', help='Output file name based on date')
+    parser.add_argument('-l', '--log_interval', type=int, default=1, help='Interval to log, in integer minutes')
+    parser.add_argument('-s', '--output_separator', default='\t', help='Separator for output file(s)')
     group = parser.add_argument_group('short interval logging')
     group.add_argument('--log_short_interval', action='store_true', help='Additional log at shorter interval')
-    group.add_argument('--short_output_file', dest='short_output_file_name', help='File to write shorter intervales to')
-    group.add_argument('--short_output_directory', default='/dev/shm', help='Directory to write short interval output to.')
+    group.add_argument('--short_output_file_pattern', default='/dev/shm/%Y%m%d-short_interval.tsv', help='File to write shorter intervales to')
     group.add_argument('--short_interval', type=int, default=15, help='Interval to log, in integer seconds')
     parser.add_argument('-d', '--daemon', action='store_true', help='Run as a daemon')
-    parser.add_argument('-v', '--verbose', action='store_true', help='Print each data point to stdout')
     args = parser.parse_args()
 
     if args.daemon:
