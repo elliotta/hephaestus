@@ -189,12 +189,12 @@ def main(web_output_file, interval, web_server_port, verbose,
 
             # Stdout output
             if verbose:
-                print(now.isoformat() + ' ' + '; '.join(['%f,%f,%f' % (t, i, c) for t, i, c in zip(temps, internals, corrected_temps_f) ]))
+                print(now.isoformat() + ' ' + '; '.join(['%.2f,%.2f,%.2f' % (t, i, c) for t, i, c in zip(temps, internals, corrected_temps_f) ]))
 
             # Html output
             # Always overwrite current file
             with open(web_output_file, 'w') as web_file:
-                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['temp %i: %.1f F' % (i, f) for i, f in enumerate(corrected_temps_f)]), now.isoformat()))
+                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['temp %i: %.1f F (%.1f sensor, %.1f internal)' % (i, f, c_to_f(raw_t), c_to_f(raw_i)) for i, (f, raw_t, raw_i) in enumerate(zip(corrected_temps_f,temps, internals))]), now.isoformat()))
 
             # Log file output
             if not interval_start_time:
@@ -203,12 +203,14 @@ def main(web_output_file, interval, web_server_port, verbose,
                 if not short_interval_start_time:
                     short_interval_start_time = now
 
-            if (not file_start_time) or (now - interval_start_time > log_interval):
+            if (not file_start_time) or (now - interval_start_time >= log_interval):
                 if not file_start_time:
                     file_start_time = now
                 # Assemble data dictionary
-                data_dict = OrderedDict([('timestamp', interval_start_time.strftime('%H:%M:%S')), ('hours', format((interval_start_time-file_start_time).total_seconds()/3600.0, '06.3f'))])
-                data_dict.update([('sensor %i F' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps_f)])
+                data_dict = OrderedDict([('timestamp', now.strftime('%H:%M:%S')), ('hours', format((now-file_start_time).total_seconds()/3600.0, '06.3f'))])
+                data_dict.update([('sensor %i F' % (i+1), format(temp, '.2f')) for i, temp in enumerate(corrected_temps_f)])
+                data_dict.update([('raw %i F' % (i+1), format(c_to_f(temp), '.2f')) for i, temp in enumerate(temps)])
+                data_dict.update([('internal %i F' % (i+1), format(c_to_f(temp), '.2f')) for i, temp in enumerate(internals)])
                 # Write out the data
                 if not output_file or now.date() != current_date:
                     if output_file:
@@ -217,14 +219,15 @@ def main(web_output_file, interval, web_server_port, verbose,
                     current_date = datetime.datetime.now().date()
                     output_file = get_output_file(current_date.strftime(output_file_pattern), data_dict, output_separator)
                 output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
+                interval_start_time = now
 
             if log_short_interval:
-                if (not short_file_start_time) or (now - short_interval_start_time > short_interval):
+                if (not short_file_start_time) or (now - short_interval_start_time >=short_interval):
                     if not short_file_start_time:
                         short_file_start_time = now
                     # Assemble data dictionary
-                    data_dict = OrderedDict([('timestamp', short_interval_start_time.strftime('%H:%M:%S')), ('hours', format((short_interval_start_time-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
-                    data_dict.update([('sensor %i F' % (i+1), str(temp)) for i, temp in enumerate(corrected_temps_f)])
+                    data_dict = OrderedDict([('timestamp', now.strftime('%H:%M:%S')), ('hours', format((now-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
+                    data_dict.update([('sensor %i F' % (i+1), format(temp, '.2f')) for i, temp in enumerate(corrected_temps_f)])
                     # Write out the data
                     if not short_output_file or now.date() != current_date:
                         if short_output_file:
@@ -233,6 +236,7 @@ def main(web_output_file, interval, web_server_port, verbose,
                         current_date = datetime.datetime.now().date()
                         short_output_file = get_output_file(current_date.strftime(short_log_file_pattern), data_dict, output_separator)
                     short_output_file.write(output_separator.join([str(x) for x in data_dict.values()]) + '\n')
+                    short_interval_start_time = now
 
             time.sleep(interval - time.time() % interval) # corrects for drift
 
