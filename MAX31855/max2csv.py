@@ -30,6 +30,7 @@ import Adafruit_MAX31855.MAX31855 as MAX31855
 CLK = 24
 DO  = 25
 CS  = [23, 18, 22, 17]
+SENSOR_NAMES = ['Firebox', 'Cat', 'Stove Top', 'Flue']
 
 
 def c_to_f(c):
@@ -145,7 +146,7 @@ def get_output_file(filename, data_dict, sep):
                     # only do this the first time, otherwise file will be foo-2-3-4.log!
                     base, extension = os.path.splitext(filename) 
                 filename = base + '-' + str(x) + extension
-                stderr.write('File %s has unexpected header line' % filename)
+                stderr.write('File %s has unexpected header line\n' % filename)
                 # The next loop will try with this new filename
         else:
             # Is safe to overwrite an empty file
@@ -194,7 +195,7 @@ def main(web_output_file, interval, web_server_port, verbose,
             # Html output
             # Always overwrite current file
             with open(web_output_file, 'w') as web_file:
-                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['temp %i: %.1f F (%.1f sensor, %.1f internal)' % (i, f, c_to_f(raw_t), c_to_f(raw_i)) for i, (f, raw_t, raw_i) in enumerate(zip(corrected_temps_f,temps, internals))]), now.isoformat()))
+                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['temp %s: %.1f F (%.1f sensor, %.1f internal)' % (name, f, c_to_f(raw_t), c_to_f(raw_i)) for name, f, raw_t, raw_i in zip(SENSOR_NAMES,corrected_temps_f,temps, internals)]), now.isoformat()))
 
             # Log file output
             if not interval_start_time:
@@ -208,9 +209,9 @@ def main(web_output_file, interval, web_server_port, verbose,
                     file_start_time = now
                 # Assemble data dictionary
                 data_dict = OrderedDict([('timestamp', now.strftime('%H:%M:%S')), ('hours', format((now-file_start_time).total_seconds()/3600.0, '06.3f'))])
-                data_dict.update([('sensor %i F' % (i+1), format(temp, '.2f')) for i, temp in enumerate(corrected_temps_f)])
-                data_dict.update([('raw %i F' % (i+1), format(c_to_f(temp), '.2f')) for i, temp in enumerate(temps)])
-                data_dict.update([('internal %i F' % (i+1), format(c_to_f(temp), '.2f')) for i, temp in enumerate(internals)])
+                data_dict.update([('%s F' % name, format(temp, '.2f')) for name, temp in zip(SENSOR_NAMES, corrected_temps_f)])
+                data_dict.update([('raw %s F' % name, format(c_to_f(temp), '.2f')) for name, temp in zip(SENSOR_NAMES, temps)])
+                data_dict.update([('internal %s F' % name, format(c_to_f(temp), '.2f')) for name, temp in zip(SENSOR_NAMES, internals)])
                 # Write out the data
                 if not output_file or now.date() != current_date:
                     if output_file:
@@ -227,7 +228,7 @@ def main(web_output_file, interval, web_server_port, verbose,
                         short_file_start_time = now
                     # Assemble data dictionary
                     data_dict = OrderedDict([('timestamp', now.strftime('%H:%M:%S')), ('hours', format((now-short_file_start_time).total_seconds()/3600.0, '07.4f'))])
-                    data_dict.update([('sensor %i F' % (i+1), format(temp, '.2f')) for i, temp in enumerate(corrected_temps_f)])
+                    data_dict.update([('%s F' % name, format(temp, '.2f')) for name, temp in zip(SENSOR_NAMES, corrected_temps_f)])
                     # Write out the data
                     if not short_output_file or now.date() != current_date:
                         if short_output_file:
