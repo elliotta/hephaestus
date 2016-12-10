@@ -111,8 +111,11 @@ def main(web_output_file, interval, web_server_port, verbose,
 
             # Html output
             # Always overwrite current file
+            html = '<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head>'
+            lines = ['%s: %.1f F (%.1f internal) errors: %s' % (name, t['linearized'], t['internal'], str([s for s, v in t['state'].items() if v])) for name, t in zip(SENSOR_NAMES, temps)]
+            html += '<body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(lines), now.isoformat())
             with open(web_output_file, 'w') as web_file:
-                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['%s: %.1f F (%.1f sensor, %.1f internal)' % (name, t['linearized'], t['temp'], t['internal']) for name, t in zip(SENSOR_NAMES, temps)]), now.isoformat()))
+                web_file.write(html)
 
             # Log file output
             if not interval_start_time:
@@ -127,7 +130,6 @@ def main(web_output_file, interval, web_server_port, verbose,
                 # Assemble data dictionary
                 data_dict = OrderedDict([('timestamp', now.strftime('%H:%M:%S')), ('hours', format((now-file_start_time).total_seconds()/3600.0, '06.3f'))])
                 data_dict.update([('%s F' % name, format(t['linearized'], '.2f')) for name, t in zip(SENSOR_NAMES, temps)])
-                data_dict.update([('raw %s F' % name, format(t['temp'], '.2f')) for name, t in zip(SENSOR_NAMES, temps)])
                 data_dict.update([('internal %s F' % name, format(t['internal'], '.2f')) for name, t in zip(SENSOR_NAMES, temps)])
                 # Write out the data
                 if not output_file or now.date() != current_date:
