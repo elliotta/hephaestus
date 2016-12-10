@@ -141,12 +141,12 @@ def get_output_file(filename, data_dict, sep):
                 f_check.close()
                 return open(filename, 'a', 1) # line buffered
             else:
+                stderr.write('File %s has unexpected header line\n' % filename)
                 x += 1
                 if x == 2:
                     # only do this the first time, otherwise file will be foo-2-3-4.log!
                     base, extension = os.path.splitext(filename) 
                 filename = base + '-' + str(x) + extension
-                stderr.write('File %s has unexpected header line\n' % filename)
                 # The next loop will try with this new filename
         else:
             # Is safe to overwrite an empty file
@@ -195,7 +195,7 @@ def main(web_output_file, interval, web_server_port, verbose,
             # Html output
             # Always overwrite current file
             with open(web_output_file, 'w') as web_file:
-                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['temp %s: %.1f F (%.1f sensor, %.1f internal)' % (name, f, c_to_f(raw_t), c_to_f(raw_i)) for name, f, raw_t, raw_i in zip(SENSOR_NAMES,corrected_temps_f,temps, internals)]), now.isoformat()))
+                web_file.write('<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head><body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(['%s: %.1f F (%.1f sensor, %.1f internal)' % (name, f, c_to_f(raw_t), c_to_f(raw_i)) for name, f, raw_t, raw_i in zip(SENSOR_NAMES,corrected_temps_f,temps, internals)]), now.isoformat()))
 
             # Log file output
             if not interval_start_time:
