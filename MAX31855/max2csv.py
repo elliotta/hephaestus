@@ -112,7 +112,9 @@ def main(web_output_file, interval, web_server_port, verbose,
             # Html output
             # Always overwrite current file
             html = '<html><head><meta http-equiv="refresh" content="1"><title>Current Temps</title></head>'
-            lines = ['%s: %.1f F (%.1f internal) errors: %s' % (name, t['linearized'], t['internal'], str([s for s, v in t['state'].items() if v])) for name, t in zip(SENSOR_NAMES, temps)]
+            lines = ['%s: %.1f F' % (name, t['linearized']) for name, t in zip(SENSOR_NAMES, temps)]
+            lines += ['<br>', '<br>']
+            lines += ['%s: %.1f internal; errors: %s' % (name, t['internal'], str([s for s, v in t['state'].items() if v])) for name, t in zip(SENSOR_NAMES, temps)]
             html += '<body><h1>%s<br><<%s></h1></body></html>' % ('<br>'.join(lines), now.isoformat())
             with open(web_output_file, 'w') as web_file:
                 web_file.write(html)
