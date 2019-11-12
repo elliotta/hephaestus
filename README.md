@@ -35,6 +35,8 @@ sudo pip install pyserial
 ~~~~
 
 Install the python module from https://github.com/adafruit/Adafruit_Python_MAX31855
+The version of that module that this was written for is from Dec 3 2016.
+The current version no longer works with this code.
 
 One option for running this program is to add an entry to the crontab
 that check every 5 minutes to be sure the program is up, and restarts
