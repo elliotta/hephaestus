@@ -34,6 +34,12 @@ sudo easy_install pip
 sudo pip install pyserial
 ~~~~
 
+One option for running this program is to add an entry to the crontab
+that check every 5 minutes to be sure the program is up, and restarts
+it if it is not.
+
+*/5 * * * * cd /home/pi/hephaestus/MAX31855; ./max2csv.py -d
+
 ### Timezone
 
 Default file names are based on the date, and the logs have timestamps. To avoid
